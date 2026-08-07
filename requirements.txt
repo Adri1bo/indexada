@@ -1,4 +1,3 @@
 pandas
-requirements
 plotly
 fpdf2
