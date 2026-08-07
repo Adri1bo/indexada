@@ -74,16 +74,30 @@ if generar:
         with c3: st.metric("Sincronització", f"{random.randint(80, 100)}%")
 
     with col2:
-        st.subheader("🖼️ Retrat Generat (IA d'Imatge - Flux)")
-        with st.spinner("La IA està dibuixant el personatge de zero..."):
-            # Cridem al model de generació d'imatges FLUX (el més potent actualment en codi obert)
-            url_imatge = f"https://pollinations.ai{requests.utils.quote(imatge_prompt)}?width=512&height=512&seed={random.randint(1,99999)}"
+        st.subheader("🖼️ Retrat Generat (IA d'Imatge)")
+        
+        # 1. Indicador en blau que està treballant
+        estat_imatge = st.info("⏳ La IA de dibuix s'està posant en marxa... (sol trigar entre 5 i 10 segons)")
+        
+        # 2. Nova URL directa i neta sense la /p/ (Segons les últimes actualitzacions de l'API)
+        prompt_net = requests.utils.quote(imatge_prompt)
+        llavor_aleatoria = random.randint(1, 99999)
+        url_imatge = f"https://image.pollinations.ai/{prompt_net}?width=512&height=512&seed={llavor_aleatoria}&model=flux"
+        
+        try:
+            # 3. Forcem a Python a descarregar primer la imatge
+            resposta_img = requests.get(url_imatge, timeout=30)
             
-            # Mostrem la imatge directament des de la URL generada en temps real
-            st.image(url_imatge, caption=f"Retrat oficial de {nom}", use_container_width=True)
-            
-            # Botó per descarregar el teu avatar de fusta
-            st.caption("Aquesta imatge s'ha creat completament de zero en aquest moment mitjançant xarxes neuronals.")
+            if resposta_img.status_code == 200 and len(resposta_img.content) > 100:
+                # Si la imatge té pes real, esborrem l'avís blau i la pintem
+                estat_imatge.empty()
+                st.image(resposta_img.content, caption=f"Retrat oficial de {nom}", use_container_width=True)
+            else:
+                estat_imatge.error("⚠️ El servidor de la IA ha respost però ha enviat una imatge buida. Torna a provar-ho en uns segons.")
+        
+        except Exception as e:
+            estat_imatge.error(f"❌ No s'ha pogut connectar amb la IA. Error de xarxa: {e}")
+
 
 else:
     # Pantalla de benvinguda quan l'app s'obre per primera vegada
