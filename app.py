@@ -7,14 +7,13 @@ import plotly.express as px
 # Configuració de la pàgina web
 st.set_page_config(page_title="Visor de Tarifa Elèctrica Indexada", layout="wide", page_icon="⚡")
 st.title("⚡ Visor Horari per a Tarifes Indexades de la Llum")
-st.write("Consulta el preu real de l'energia hora a hora adaptat exactament al teu contracte del mercat lliure.")
+st.write("Consulta el preu real de l'energia adaptat al teu contracte del mercat lliure utilitzant les dades oficials de Red Eléctrica.")
 
 # ---------------------------------------------------------
 # BARRA LATERAL - ENTRADA DEL MARGE DE LA COMERCIALITZADORA
 # ---------------------------------------------------------
 st.sidebar.header("🔧 Paràmetres del teu Contracte")
 
-# El marge comercial se sol cobrar per kWh consumit (habitualment entre 0.003 i 0.02 €/kWh)
 marge_comercializadora = st.sidebar.number_input(
     "Marge de la teva comercialitzadora (€/kWh)", 
     min_value=0.000, 
@@ -23,67 +22,82 @@ marge_comercializadora = st.sidebar.number_input(
     step=0.001,
     format="%.3f"
 )
-st.sidebar.info("💡 Mira la teva última factura de la llum. El marge sol aparèixer com a 'gastos de gestión', 'pass-through' o 'margen' sumat al cost de l'energia.")
+st.sidebar.info("💡 Suma el marge (ex: 0.010 €) al cost oficial OMIE del mercat diari.")
 
 # ---------------------------------------------------------
-# DESCARGA DE DADES EN TEMPS REAL (API Pública sense Claus)
+# DESCÀRREGA DE DADES EN TEMPS REAL DES DE RED ELÉCTRICA (API Oficial)
 # ---------------------------------------------------------
-@st.cache_data(ttl=3600)  # Desa en memòria 1 hora per anar ràpid
-def obtenir_preus_llum():
-    # Utilitzem l'API oberta d'api.preciodelaluz.org que no requereix registre ni tokens
-    url = "https://preciodelaluz.org"
+@st.cache_data(ttl=1800)  # Guarda en memòria 30 minuts
+def obtenir_preus_oficials_ree():
+    avui = datetime.date.today().strftime("%Y-%m-%d")
+    # Indicador 1013: Preu mitjà horari del mercat diari (base per a les indexades)
+    url = f"https://ree.es{avui}T00:00&end_date={avui}T23:59&time_trunc=hour"
+    
     try:
-        resposta = requests.get(url, timeout=10)
+        resposta = requests.get(url, timeout=15)
         if resposta.status_code == 200:
             dades_json = resposta.json()
+            # Busquem la sèrie de preus de mercat dins l'estructura de REE
+            valors = dades_json['included'][0]['attributes']['values']
+            
             llista_hores = []
-            for clau, info in dades_json.items():
-                # L'API torna el preu en €/MWh o MWh, ho passem a €/kWh dividint per 1000
-                preu_base_kwh = info['price'] / 1000
-                hora_text = info['hour']
+            for i, info in enumerate(valors):
+                # El preu de la REE ve en €/MWh, ho dividim per 1000 per passar a €/kWh
+                preu_base_kwh = info['value'] / 1000
+                hora_text = f"{i:02d}:00 - {i+1:02d}:00"
+                
+                # Calculem la franja horària estàndard (Punta, Plana, Vall) per a la gràfica
+                if i in [10, 11, 12, 13, 18, 19, 20, 21]:
+                    franja = "PEAK (Cara)"
+                elif i in [8, 9, 14, 15, 16, 17, 22, 23]:
+                    franja = "FLAT (Mitjana)"
+                else:
+                    franja = "VALLEY (Barata)"
+                    
                 llista_hores.append({
-                    "Hora": f"{hora_text}",
+                    "Hora": hora_text,
                     "Preu Base Mercat (€/kWh)": preu_base_kwh,
-                    "Franja": info['zone']
+                    "Franja": franja,
+                    "Num_Hora": i
                 })
-            # El JSON no ve ordenat per hores, ho ordenem nosaltres
-            df = pd.DataFrame(llista_hores)
-            df['Hora_Num'] = df['Hora'].apply(lambda x: int(x.split('-')[0]))
-            df = df.sort_values(by='Hora_Num').drop(columns=['Hora_Num']).reset_index(drop=True)
-            return df
+            return pd.DataFrame(llista_hores)
         return None
     except Exception:
         return None
 
-# Cridem la funció per carregar la graella de dades
-df_preus = obtenir_preus_llum()
+# Carreguem les dades oficials
+df_preus = obtenir_preus_oficials_ree()
 
-if df_preus is not None:
+if df_preus is not None and not df_preus.empty:
     # ---------------------------------------------------------
     # CÀLCUL DEL PREU FINAL (Preu Mercat + Marge Usuari)
     # ---------------------------------------------------------
     df_preus["El teu Preu Final (€/kWh)"] = df_preus["Preu Base Mercat (€/kWh)"] + marge_comercializadora
-    
-    # Afegim una columna per facilitar la lectura visual a la taula
     df_preus["Preu Final (cèntims/kWh)"] = df_preus["El teu Preu Final (€/kWh)"] * 100
 
-    # Detectar l'hora actual per donar una resposta ràpida
+    # Detectar l'hora actual per donar el resultat en viu
     hora_actual = datetime.datetime.now().hour
+    # Ens assegurem de no demanar una hora fora de rang si l'API no s'ha actualitzat del tot
+    if hora_actual >= len(df_preus):
+        hora_actual = len(df_preus) - 1
+        
     fila_actual = df_preus.iloc[hora_actual]
     preu_ara = fila_actual["El teu Preu Final (€/kWh)"]
-    franja_ara = fila_actual["Franja"]
     
-    # Càlculs de referència del dia
-    preu_minim = df_preus["El teu Preu Final (€/kWh)"].min()
-    hora_minima = df_preus.iloc[df_preus["El teu Preu Final (€/kWh)"].idxmin()]["Hora"]
+    # Càlculs de màxims i mínims de la jornada
+    idx_min = df_preus["El teu Preu Final (€/kWh)"].idxmin()
+    idx_max = df_preus["El teu Preu Final (€/kWh)"].idxmax()
     
-    preu_maxim = df_preus["El teu Preu Final (€/kWh)"].max()
-    hora_maxima = df_preus.iloc[df_preus["El teu Preu Final (€/kWh)"].idxmax()]["Hora"]
+    preu_minim = df_preus.loc[idx_min, "El teu Preu Final (€/kWh)"]
+    hora_minima = df_preus.loc[idx_min, "Hora"]
+    
+    preu_maxim = df_preus.loc[idx_max, "El teu Preu Final (€/kWh)"]
+    hora_maxima = df_preus.loc[idx_max, "Hora"]
 
     # ---------------------------------------------------------
     # METRIQUES PRINCIPALS (KPIs)
     # ---------------------------------------------------------
-    st.subheader("📌 Estat actual del mercat")
+    st.subheader("📌 Estat actual del mercat oficial (OMIE)")
     col1, col2, col3 = st.columns(3)
     
     with col1:
@@ -109,17 +123,16 @@ if df_preus is not None:
     # GRÀFIC INTERACTIU DE FRANGES HORÀRIES
     # ---------------------------------------------------------
     st.subheader("📈 Corba de Preus per a la teva Tarifa Indexada")
-    st.write("Fes passat el ratolí pel gràfic per veure el preu exacte de cada hora (inclou el marge configurat).")
+    st.write("Passa el ratolí pel gràfic per veure la teva tarifa amb el marge sumat.")
     
-    # Crear gràfic de barres de color depenent de la franja horària
     fig = px.bar(
         df_preus, 
         x="Hora", 
         y="El teu Preu Final (€/kWh)", 
         color="Franja",
-        color_discrete_map={"VALLEY": "#2ca02c", "FLAT": "#ff7f0e", "PEAK": "#d62728"},
+        color_discrete_map={"VALLEY (Barata)": "#2ca02c", "FLAT (Mitjana)": "#ff7f0e", "PEAK (Cara)": "#d62728"},
         labels={"El teu Preu Final (€/kWh)": "Preu total amb marge (€/kWh)"},
-        title="Preu del kWh al llarg de les 24 hores d'avui"
+        title="Cost del kWh al llarg d'avui"
     )
     
     fig.update_layout(hovermode="x unified", yaxis_tickformat=".4f")
@@ -128,10 +141,10 @@ if df_preus is not None:
     # ---------------------------------------------------------
     # TAULA DETALLADA
     # ---------------------------------------------------------
-    if st.checkbox("🔍 Veure la taula de dades completa (amb decimals de cèntim)"):
+    if st.checkbox("🔍 Veure la taula completa de dades en cèntims de deute"):
         st.dataframe(
             df_preus[["Hora", "Preu Base Mercat (€/kWh)", "El teu Preu Final (€/kWh)", "Preu Final (cèntims/kWh)"]],
             use_container_width=True
         )
 else:
-    st.error("❌ No s'han pogut carregar els preus de l'energia en aquest moment. Verifica la teva connexió a internet o torna-ho a provar més tard.")
+    st.error("❌ Red Eléctrica no està enviant dades en aquest instant. Això pot ser degut a un manteniment del ministeri o a que encara no s'han publicat les hores d'avui. Torna-ho a provar en un moment.")
