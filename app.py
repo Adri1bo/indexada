@@ -21,14 +21,14 @@ if st.button("Validar Token"):
             data_consulta = (ara + timedelta(days=1)).strftime("%Y-%m-%d")
             st.info(f"📅 Comprovant amb els preus de DEMÀ ({data_consulta})")
 
-        url = "https://api.esios.ree.es/indicators/1001"
+        url = "https://ree.es"
         
-        # CAPÇALERES CORREGIDES: Evitem que el tallafocs bloquegi la petició
+        # CAPÇALERES NETES PER A TOKENS NOUS
         headers = {
-            "Accept": "application/json; application/vnd.esios-api.v2+json", # Forçat a V2
+            "Accept": "application/json; application/vnd.esios-api.v1+json",
             "Content-Type": "application/json",
             "Host": "api.esios.ree.es",
-            "Authorization": f'Token token="{token}"', # Format exacte requerit per ESIOS
+            "x-api-key": token.strip(), # Enviem només la clau neta sense espais externs
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
         
@@ -54,14 +54,14 @@ if st.button("Validar Token"):
                                 h = hora['datetime'][11:16]
                                 st.write(f"⏰ Hora {h} -> **{preu_kwh:.5f} €/kWh**")
                         else:
-                            st.warning("Connexió correcta, però l'API ha retornat una llista buida per a aquesta data.")
+                            st.warning("Connexió correcta, dades encara buides per a aquesta data.")
                     except ValueError:
-                        st.error("❌ El servidor ha respòs, però el contingut continua sense ser un JSON vàlid.")
+                        st.error("❌ El servidor ha respòs, però el contingut no és un JSON vàlid.")
                         st.text_area("Inici de la resposta rebuda:", res.text[:300])
                         
                 elif res.status_code in [401, 403]:
-                    st.error("❌ Error d'autenticació (401/403): El token és incorrecte o ha caducat.")
-                    st.info("💡 Recorda que si el teu token té força temps, ESIOS els sol desactivar per inactivitat. En pots demanar un de nou a consultasios@ree.es.")
+                    st.error("❌ Error d'autenticació (401/403): El token ha estat rebutjat per l'API.")
+                    st.info("💡 Assegura't de no haver copiat cap espai en blanc abans o després del codi en enganxar-lo.")
                 else:
                     st.error(f"❌ Error de l'API (Codi HTTP {res.status_code})")
                     st.text_area("Detall de la resposta:", res.text[:300])
