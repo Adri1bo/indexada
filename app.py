@@ -21,7 +21,7 @@ if st.button("Validar Token"):
             data_consulta = (ara + timedelta(days=1)).strftime("%Y-%m-%d")
             st.info(f"📅 Comprovant amb els preus de DEMÀ ({data_consulta})")
 
-        # URL ESPECÍFICA DE DADES (Evita la redirecció a la documentació HTML)
+        # URL específica de dades de l'indicador PVPC
         url = "https://ree.es"
         
         headers = {
@@ -65,3 +65,4 @@ if st.button("Validar Token"):
                     
             except Exception as e:
                 st.error(f"Error de xarxa o connexió: {e}")
+
