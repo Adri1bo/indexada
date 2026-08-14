@@ -21,14 +21,12 @@ if st.button("Validar Token"):
             data_consulta = (ara + timedelta(days=1)).strftime("%Y-%m-%d")
             st.info(f"📅 Comprovant amb els preus de DEMÀ ({data_consulta})")
 
+        # URL ESPECÍFICA DE DADES (Evita la redirecció a la documentació HTML)
         url = "https://ree.es"
         
-        # CAPÇALERES NETES PER A TOKENS NOUS
         headers = {
             "Accept": "application/json; application/vnd.esios-api.v1+json",
-            "Content-Type": "application/json",
-            "Host": "api.esios.ree.es",
-            "x-api-key": token.strip(), # Enviem només la clau neta sense espais externs
+            "x-api-key": token.strip(),
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
         
@@ -59,9 +57,8 @@ if st.button("Validar Token"):
                         st.error("❌ El servidor ha respòs, però el contingut no és un JSON vàlid.")
                         st.text_area("Inici de la resposta rebuda:", res.text[:300])
                         
-                elif res.status_code in [401, 403]:
+                elif res.status_code in:
                     st.error("❌ Error d'autenticació (401/403): El token ha estat rebutjat per l'API.")
-                    st.info("💡 Assegura't de no haver copiat cap espai en blanc abans o després del codi en enganxar-lo.")
                 else:
                     st.error(f"❌ Error de l'API (Codi HTTP {res.status_code})")
                     st.text_area("Detall de la resposta:", res.text[:300])
