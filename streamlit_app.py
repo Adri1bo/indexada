@@ -54,7 +54,7 @@ def actualitzar_dia_esios(data_objecte):
     data_str = data_objecte.strftime("%Y-%m-%d")
     
     # Construcció de la URL
-    url_dades = f"https://ree.es{TIPUS_RUTA}/{INDICATOR}"
+    url_dades = f"https://ree.es/{TIPUS_RUTA}/{INDICATOR}"
     
     # MOSTRAM LA URL A LA PANTALLA PER INSPECCIONAR-LA
     st.sidebar.info(f"🔍 URL trucada: {url_dades}")
