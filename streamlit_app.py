@@ -7,7 +7,7 @@ from supabase import create_client, Client
 st.set_page_config(page_title="ESIOS + Supabase Dashboard", page_icon="📈", layout="wide")
 st.title("📈 Quadre de Comandament ESIOS + Supabase")
 
-# 1. Connexió Segura utilitzant els Secrets
+# 1. Connexió Segura utilitzant els Secrets nets
 SUPABASE_URL = st.secrets["supabase"]["url"].strip().rstrip("/")
 SUPABASE_KEY = st.secrets["supabase"]["key"].strip()
 TOKEN_ESIOS = st.secrets["esios"]["token"].strip()
@@ -22,13 +22,14 @@ headers = {
 }
 
 INDICATOR = 1013  # Codi fix del PVPC
+TIPUS_RUTA = "indicators"  # Tipus de ruta per al PVPC (comprovat al teu cercador)
 
 # Funció d'emergència per actualitzar dades d'un dia en concret
 def actualitzar_dia_esios(data_objecte):
     data_str = data_objecte.strftime("%Y-%m-%d")
     
-    # LA URL CORREGIDA: Utilitzem la ruta que hem comprovat que connecta bé
-    url_dades = f"https://ree.es{INDICATOR}"
+    # LA TEVA URL EXACTA QUE FUNCIONA:
+    url_dades = f"https://api.esios.ree.es/{TIPUS_RUTA}/{INDICATOR}"
     
     params_dades = {
         "start_date": f"{data_str}T00:00:00",
@@ -38,17 +39,24 @@ def actualitzar_dia_esios(data_objecte):
     try:
         res = requests.get(url_dades, headers=headers, params=params_dades, timeout=12)
         if res.status_code == 200:
-            valors = res.json().get('indicator', {}).get('values', [])
+            dades_finals = res.json()
+            # L'API pot respondre sota 'indicator' o 'offer_indicator' segons la ruta
+            clau_principal = 'indicator' if 'indicator' in dades_finals else 'offer_indicator'
+            valors = dades_finals.get(clau_principal, {}).get('values', [])
+            
             if valors:
                 files_a_guardar = []
                 for v in valors:
+                    # Gestionem que useu 'value' o 'price' segons l'indicador
+                    valor_real = v.get('value') if v.get('value') is not None else v.get('price')
+                    
                     files_a_guardar.append({
                         "datetime": v.get('datetime'),
                         "indicator_id": INDICATOR,
-                        "value": v.get('value')
+                        "value": valor_real
                     })
                 
-                # Inserció massiva amb upsert
+                # Inserció massiva amb upsert a Supabase
                 supabase.table("esios_data").upsert(
                     files_a_guardar, 
                     on_conflict="datetime,indicator_id"
@@ -70,7 +78,7 @@ necessita_recargar_app = False
 resposta_db = supabase.table("esios_data").select("*").eq("indicator_id", INDICATOR).order("datetime", desc=False).execute()
 df_base = pd.DataFrame(resposta_db.data)
 
-# B. Comprovació intel·ligent millorada per a bases de dades buides o incompletes
+# B. Comprovació intel·ligent per a bases de dades buides o incompletes
 if df_base.empty:
     st.sidebar.warning(f"🚨 Base de dades buida. Inicialitzant dades d'avui ({avui})...")
     registres_nous = actualitzar_dia_esios(avui)
@@ -133,4 +141,4 @@ if not df_base.empty:
     with st.expander("🔎 Obrir l'inspector de la taula de Supabase"):
         st.dataframe(df_base, use_container_width=True)
 else:
-    st.error("❌ No s'ha pogut inicialitzar l'aplicació. Revisa que el teu token d'ESIOS continuï actiu.")
+    st.error("❌ No s'ha pogut inicialitzar l'aplicació. Verifica les teves claus de Supabase.")
