@@ -49,9 +49,15 @@ st.sidebar.markdown("---")
 st.sidebar.header("⚙️ Estat de la Sincronització")
 
 # Funció d'emergència per actualitzar dades d'un dia en concret
+# Funció d'emergència per actualitzar dades d'un dia en concret
 def actualitzar_dia_esios(data_objecte):
     data_str = data_objecte.strftime("%Y-%m-%d")
-    url_dades = f"https://ree.es/{TIPUS_RUTA}/{INDICATOR}"
+    
+    # Construcció de la URL
+    url_dades = f"https://ree.es{TIPUS_RUTA}/{INDICATOR}"
+    
+    # MOSTRAM LA URL A LA PANTALLA PER INSPECCIONAR-LA
+    st.sidebar.info(f"🔍 URL trucada: {url_dades}")
     
     params_dades = {
         "start_date": f"{data_str}T00:00:00",
@@ -60,6 +66,10 @@ def actualitzar_dia_esios(data_objecte):
     
     try:
         res = requests.get(url_dades, headers=headers, params=params_dades, timeout=12)
+        
+        # Mostrem també el codi de resposta real de la API al costat
+        st.sidebar.text(f"📡 Codi resposta: {res.status_code}")
+        
         if res.status_code == 200:
             dades_finals = res.json()
             clau_principal = 'indicator' if 'indicator' in dades_finals else 'offer_indicator'
@@ -76,7 +86,6 @@ def actualitzar_dia_esios(data_objecte):
                     })
                 
                 try:
-                    # Inserció massiva amb upsert a Supabase
                     supabase.table("esios_data").upsert(
                         files_a_guardar, 
                         on_conflict="datetime,indicator_id"
@@ -86,12 +95,13 @@ def actualitzar_dia_esios(data_objecte):
                     st.sidebar.error(f"❌ Error de Supabase al desar: {error_sb}")
                     return 0
             else:
-                st.sidebar.warning(f"⚠️ ESIOS no té dades per al dia {data_str}.")
+                st.sidebar.warning(f"⚠️ ESIOS ha respost buit per al dia {data_str}.")
         else:
             st.sidebar.error(f"❌ Error ESIOS Codi: {res.status_code}")
     except Exception as e:
         st.sidebar.error(f"❌ Error de xarxa: {e}")
     return 0
+
 
 # --- FLUX PRINCIPAL DE L'APP ---
 
