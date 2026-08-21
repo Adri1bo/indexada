@@ -26,7 +26,10 @@ INDICATOR = 1013  # Codi fix del PVPC
 # Funció d'emergència per actualitzar dades d'un dia en concret
 def actualitzar_dia_esios(data_objecte):
     data_str = data_objecte.strftime("%Y-%m-%d")
+    
+    # LA URL CORREGIDA: Utilitzem la ruta que hem comprovat que connecta bé
     url_dades = f"https://ree.es{INDICATOR}"
+    
     params_dades = {
         "start_date": f"{data_str}T00:00:00",
         "end_date": f"{data_str}T23:59:59"
@@ -90,7 +93,6 @@ else:
 # Comprovació de demà (només si ja s'han publicat els preus després de les 20:15h)
 ara = datetime.now()
 if ara.hour > 20 or (ara.hour == 20 and ara.minute >= 15):
-    # Tornem a comprovar si hi ha dades abans d'analitzar el demà
     if not df_base.empty:
         df_base['datetime'] = pd.to_datetime(df_base['datetime'])
         dies_guardats = df_base['datetime'].dt.date.unique()
@@ -106,7 +108,7 @@ if ara.hour > 20 or (ara.hour == 20 and ara.minute >= 15):
             st.sidebar.success(f"✅ S'han desat {registres_nous_dema} hores de demà.")
             necessita_recargar_app = True
 else:
-    st.sidebar.info("ℹ️ Els preus de demà es publiquen a partir de les 20:15h.")
+    st.sidebar.info("ℹ️ Els preus de demà es publicen a partir de les 20:15h.")
 
 # C. Recarregar dades de la base de dades si s'ha fet cap descàrrega
 if necessita_recargar_app:
