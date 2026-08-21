@@ -7,7 +7,7 @@ from supabase import create_client, Client
 st.set_page_config(page_title="ESIOS + Supabase Dashboard", page_icon="📈", layout="wide")
 st.title("📈 Quadre de Comandament ESIOS + Supabase")
 
-# 1. Connexió Segura utilitzant els Secrets nets
+# 1. Connexió Segura utilitzant els Secrets
 SUPABASE_URL = st.secrets["supabase"]["url"].strip().rstrip("/")
 SUPABASE_KEY = st.secrets["supabase"]["key"].strip()
 TOKEN_ESIOS = st.secrets["esios"]["token"].strip()
@@ -21,7 +21,7 @@ headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
 }
 
-INDICATOR = 1013  # Codi fix de l'indicador del PVPC per defecte
+INDICATOR = 1013  # Codi fix del PVPC
 
 # Funció d'emergència per actualitzar dades d'un dia en concret
 def actualitzar_dia_esios(data_objecte):
@@ -45,7 +45,7 @@ def actualitzar_dia_esios(data_objecte):
                         "value": v.get('value')
                     })
                 
-                # Inserció / Actualització massiva a Supabase
+                # Inserció massiva amb upsert
                 supabase.table("esios_data").upsert(
                     files_a_guardar, 
                     on_conflict="datetime,indicator_id"
@@ -59,37 +59,46 @@ def actualitzar_dia_esios(data_objecte):
 
 st.sidebar.header("⚙️ Estat de la Sincronització")
 
-# Calculem quins dies hem de revisar de forma proactiva
 avui = date.today()
 dema = avui + timedelta(days=1)
+necessita_recargar_app = False
 
-# A. Llegir totes les dades existents a Supabase per a aquest indicador
+# A. Llegir totes les dades de Supabase
 resposta_db = supabase.table("esios_data").select("*").eq("indicator_id", INDICATOR).order("datetime", desc=False).execute()
 df_base = pd.DataFrame(resposta_db.data)
 
-# B. Comprovació intel·ligent automàtica dels buits de dades
-necessita_recargar_app = False
-
-if not df_base.empty:
-    df_base['datetime'] = pd.to_datetime(df_base['datetime'])
-    # Extraiem només la data sense hora per comprovar els dies que tenim guardats
-    dies_guardats = df_base['datetime'].dt.date.unique()
-else:
-    dies_guardats = []
-
-# Comprovació 1: Tenim les dades d'avui guardades (mínim 24 registres per si és horari)?
-dades_avui = df_base[df_base['datetime'].dt.date == avui] if not df_base.empty else []
-if avui not in dies_guardats or len(dades_avui) < 24:
-    st.sidebar.warning(f"⚠️ Falten dades d'avui ({avui}). Actualitzant...")
+# B. Comprovació intel·ligent millorada per a bases de dades buides o incompletes
+if df_base.empty:
+    st.sidebar.warning(f"🚨 Base de dades buida. Inicialitzant dades d'avui ({avui})...")
     registres_nous = actualitzar_dia_esios(avui)
     if registres_nous > 0:
-        st.sidebar.success(f"✅ S'han desat {registres_nous} hores d'avui.")
+        st.sidebar.success(f"✅ S'han guardat els primers {registres_nous} registres d'avui.")
         necessita_recargar_app = True
+else:
+    df_base['datetime'] = pd.to_datetime(df_base['datetime'])
+    dies_guardats = df_base['datetime'].dt.date.unique()
+    
+    # Comprovar si avui té les 24 hores completes
+    dades_avui = df_base[df_base['datetime'].dt.date == avui]
+    if avui not in dies_guardats or len(dades_avui) < 24:
+        st.sidebar.warning(f"⚠️ Falten dades d'avui ({avui}). Actualitzant...")
+        registres_nous = actualitzar_dia_esios(avui)
+        if registres_nous > 0:
+            st.sidebar.success(f"✅ S'han afegit {registres_nous} hores d'avui.")
+            necessita_recargar_app = True
 
-# Comprovació 2: Són més de les 20:15h? Si és que sí, ESIOS ja publica el PVPC de demà.
+# Comprovació de demà (només si ja s'han publicat els preus després de les 20:15h)
 ara = datetime.now()
 if ara.hour > 20 or (ara.hour == 20 and ara.minute >= 15):
-    dades_dema = df_base[df_base['datetime'].dt.date == dema] if not df_base.empty else []
+    # Tornem a comprovar si hi ha dades abans d'analitzar el demà
+    if not df_base.empty:
+        df_base['datetime'] = pd.to_datetime(df_base['datetime'])
+        dies_guardats = df_base['datetime'].dt.date.unique()
+        dades_dema = df_base[df_base['datetime'].dt.date == dema]
+    else:
+        dies_guardats = []
+        dades_dema = []
+        
     if dema not in dies_guardats or len(dades_dema) < 24:
         st.sidebar.warning(f"⚠️ Preus de demà disponibles. Baixant...")
         registres_nous_dema = actualitzar_dia_esios(dema)
@@ -97,29 +106,29 @@ if ara.hour > 20 or (ara.hour == 20 and ara.minute >= 15):
             st.sidebar.success(f"✅ S'han desat {registres_nous_dema} hores de demà.")
             necessita_recargar_app = True
 else:
-    st.sidebar.info("ℹ️ Els preus de demà es publicaran a partir de les 20:15h.")
+    st.sidebar.info("ℹ️ Els preus de demà es publiquen a partir de les 20:15h.")
 
-# C. Si hem hagut d'actualitzar algun dia sobre la marxa, tornem a llegir la base de dades actualitzada
+# C. Recarregar dades de la base de dades si s'ha fet cap descàrrega
 if necessita_recargar_app:
     resposta_db = supabase.table("esios_data").select("*").eq("indicator_id", INDICATOR).order("datetime", desc=False).execute()
     df_base = pd.DataFrame(resposta_db.data)
     if not df_base.empty:
         df_base['datetime'] = pd.to_datetime(df_base['datetime'])
 
-# D. Visualització de dades a l'usuari
+# D. Visualització final del panell de control
 if not df_base.empty:
-    st.subheader(f"📊 Evolució de Preus de l'Indicador {INDICATOR} (Dades de Supabase)")
+    st.subheader(f"📊 Evolució de Preus del PVPC (Indicador {INDICATOR})")
     
-    # Preparem un DataFrame net optimitzat per al gràfic de línies de Streamlit
+    # Mètriques clau resumides dalt del gràfic
+    col_m1, col_m2 = st.columns(2)
+    col_m1.metric("Total dades emmagatzemades", f"{len(df_base)} hores")
+    col_m2.metric("Última hora registrada", str(df_base['datetime'].max())[:16])
+    
+    # Creació del gràfic de línies de Streamlit
     df_grafic = df_base.set_index('datetime')[['value']]
     st.line_chart(df_grafic)
     
-    # Afegim algunes mètriques d'interès dalt del gràfic
-    col_m1, col_m2 = st.columns(2)
-    col_m1.metric("Total registres emmagatzemats", f"{len(df_base)} hores")
-    col_m2.metric("Última actualització detectada", str(df_base['datetime'].max())[:16])
-
-    with st.expander("🔎 Obrir l'inspector de dades de la taula"):
+    with st.expander("🔎 Obrir l'inspector de la taula de Supabase"):
         st.dataframe(df_base, use_container_width=True)
 else:
-    st.info("La base de dades està completament buida i encara no hi ha dades disponibles a ESIOS.")
+    st.error("❌ No s'ha pogut inicialitzar l'aplicació. Revisa que el teu token d'ESIOS continuï actiu.")
