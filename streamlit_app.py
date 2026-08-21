@@ -51,7 +51,7 @@ st.sidebar.header("⚙️ Estat de la Sincronització")
 # Funció d'emergència per actualitzar dades d'un dia en concret
 def actualitzar_dia_esios(data_objecte):
     data_str = data_objecte.strftime("%Y-%m-%d")
-    url_dades = f"https://ree.es{TIPUS_RUTA}/{INDICATOR}"
+    url_dades = f"https://ree.es/{TIPUS_RUTA}/{INDICATOR}"
     
     params_dades = {
         "start_date": f"{data_str}T00:00:00",
