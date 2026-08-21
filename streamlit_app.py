@@ -56,7 +56,7 @@ def actualitzar_dades_esios():
 # --- FLUX PRINCIPAL DE L'APP ---
 
 # A. Llegir dades existents a Supabase per a l'indicador seleccionat
-resposta_supabase = supabase.table("esios_data").select("*").eq("indicator_id", INDICATOR).order("datetime", ascending=True).execute()
+resposta_supabase = supabase.table("esios_data").select("*").eq("indicator_id", INDICATOR).order("datetime", desc=False).execute()
 dades_guardades = resposta_supabase.data
 
 df = pd.DataFrame(dades_guardades)
@@ -78,7 +78,7 @@ if not df.empty:
 if necessita_actualitzar:
     actualitzar_dades_esios()
     # Tornem a llegir un cop actualitzat
-    resposta_supabase = supabase.table("esios_data").select("*").eq("indicator_id", INDICATOR).order("datetime", ascending=True).execute()
+    resposta_supabase = supabase.table("esios_data").select("*").eq("indicator_id", INDICATOR).order("datetime", desc=False).execute()
     df = pd.DataFrame(resposta_supabase.data)
     if not df.empty:
         df['datetime'] = pd.to_datetime(df['datetime'])
