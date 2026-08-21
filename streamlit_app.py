@@ -35,7 +35,7 @@ else:
     data_str = data_a_demanar.strftime("%Y-%m-%d")
 
     if st.button("🚀 Trucar a la API d'ESIOS"):
-        url_dades = f"https://ree.es{id_indicador}"
+        url_dades = f"https://api.esios.ree.es/indicators/{id_indicador}"
         
         # Paràmetres del rang temporal de tot el dia seleccionat
         params_dades = {
