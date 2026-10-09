@@ -3,8 +3,8 @@ import requests
 import pandas as pd
 from datetime import datetime, timedelta
 
-st.set_page_config(page_title="ESIOS Toolkit", page_icon="⚡", layout="wide")
-st.title("⚡ ESIOS API: Cercador i Validador d'Indicadors")
+st.set_page_config(page_title="ESIOS Toolkit for Victron", page_icon="⚡", layout="wide")
+st.title("⚡ ESIOS API: Cercador i Validador d'Indicadors (Optimitzat DESS)")
 
 # Panell lateral per a l'autenticació
 st.sidebar.header("🔑 Autenticació")
@@ -18,7 +18,7 @@ else:
         "Accept": "application/json; application/vnd.esios-api-v1+json",
         "Content-Type": "application/json",
         "x-api-key": token.strip(),
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        "User-Agent": "Victron DESS Integration / Client"
     }
 
     # Creem pestanyes a la interfície
@@ -30,7 +30,6 @@ else:
         text_cerca = st.text_input("Paraula clau a buscar (ex: 'precio', 'pvpc', 'eolica'):", value="pvpc")
         
         if st.button("Buscar Indicadors"):
-            # Endpoint oficial de cerca per text
             url_cerca = "https://api.esios.ree.es/indicators"
             params_cerca = {"text": text_cerca}
             
@@ -44,7 +43,6 @@ else:
                         if indicadors:
                             st.success(f"🎉 S'han trobat {len(indicadors)} indicadors associats a '{text_cerca}':")
                             
-                            # Triem les dades clau per mostrar-les en una taula neta
                             llista_neteja = []
                             for ind in indicadors:
                                 llista_neteja.append({
@@ -69,7 +67,8 @@ else:
         
         col1, col2 = st.columns(2)
         with col1:
-            id_indicador = st.number_input("Introdueix l'ID de l'indicador (ex: 1001 per PVPC):", min_value=1, value=1001)
+            # Canviat a 1013 que és l'ID del PVPC real (el 1001 és antic/altre paràmetre)
+            id_indicador = st.number_input("Introdueix l'ID de l'indicador (PVPC oficial = 1013):", min_value=1, value=1013)
         with col2:
             tipus_ruta = st.selectbox("Tipus d'indicador (Ruta de la URL):", ["indicators", "offer_indicators"])
         
@@ -84,8 +83,7 @@ else:
             
         st.info(f"📅 Es demanaran les dades de: {text_data}")
 
-        if st.button("Obtenir Valors"):
-            # Generem la URL dinàmicament segons la ruta triada pel cercador
+        if st.button("Obtenir i Graficar Valors"):
             url_dades = f"https://api.esios.ree.es/{tipus_ruta}/{id_indicador}"
             
             params_dades = {
@@ -99,35 +97,44 @@ else:
                     
                     if res.status_code == 200:
                         dades_finals = res.json()
-                        # L'API pot respondre sota la clau 'indicator' o 'offer_indicator'
                         clau_principal = 'indicator' if 'indicator' in dades_finals else 'offer_indicator'
                         valors = dades_finals.get(clau_principal, {}).get('values', [])
                         
                         if valors:
                             st.success(f"🎉 S'han rebut {len(valors)} registres correctament!")
                             
-                            # Mostrem la llista dels primers valors convertits
-                            st.write("### Mostra de dades obtingudes (Primers 5 registres):")
-                            for v in valors[:5]:
+                            # Processat de dades net per a gràfics i taules
+                            registres_processats = []
+                            for v in valors:
+                                # Normalització de l'hora (format curt 00:00) i control de zona horària local d'Espanya
                                 hora_neta = v.get('datetime', '')[11:16]
-                                # Algunes taules usen 'value' i les d'ofertes usen 'price'
                                 valor_real = v.get('value') if v.get('value') is not None else v.get('price')
                                 
-                                st.write(f"⏰ Hora **{hora_neta}** ➔ Valor/Preu: `{valor_real}`")
+                                registres_processats.append({
+                                    "Hora": hora_neta,
+                                    "Preu (€/MWh)": float(valor_real) if valor_real is not None else 0.0
+                                })
                             
-                            # Permet veure el JSON complet per inspecció tècnica
-                            with st.expander("🔎 Veure resposta JSON completa de l'API"):
+                            df_valors = pd.DataFrame(registres_processats).set_index("Hora")
+                            
+                            # 📈 Visualització en Gràfic de Línia (Es veu la corba del dia perfectament)
+                            st.write("### 📊 Corba de preus per hores")
+                            st.line_chart(df_valors, y="Preu (€/MWh)", use_container_width=True)
+                            
+                            # 🗂️ Taula desplegable estructurada a sota del gràfic
+                            with st.expander("📋 Veure taula detallada de preus per hores"):
+                                # Mostra el preu també en cèntims/kWh perquè a Victron li encantarà (és com es mesura en bateries domèstiques)
+                                df_taula = df_valors.copy()
+                                df_taula["Preu (cts/kWh)"] = (df_taula["Preu (€/MWh)"] / 10).round(4)
+                                st.dataframe(df_taula, use_container_width=True)
+                                
+                            with st.expander("🔎 Resposta JSON nativa (Inspecció de l'API)"):
                                 st.json(dades_finals)
                         else:
                             st.warning("La connexió ha estat correcta (200), però no hi ha valors per a aquesta data.")
-                            with st.expander("Veure resposta buida"):
-                                st.json(dades_finals)
-                    elif res.status_code in [401, 403]:
+                    elif res.status_code in:
                         st.error("❌ Token denegat (401/403). Comprova que no s'hagin colat cometes o espais.")
                     else:
                         st.error(f"❌ Codi HTTP d'error {res.status_code}")
-                        st.text_area("Cos de la resposta:", res.text[:500])
-                        
                 except Exception as e:
                     st.error(f"Error de xarxa: {e}")
-
