@@ -132,7 +132,7 @@ else:
                                 st.json(dades_finals)
                         else:
                             st.warning("La connexió ha estat correcta (200), però no hi ha valors per a aquesta data.")
-                    elif res.status_code in:
+                    elif res.status_code in [401, 403]:
                         st.error("❌ Token denegat (401/403). Comprova que no s'hagin colat cometes o espais.")
                     else:
                         st.error(f"❌ Codi HTTP d'error {res.status_code}")
